@@ -1,0 +1,269 @@
+---
+title: "Laporan Visualisasi Data"
+output:
+  html_document
+params:
+  variable: "POVERTY"
+  province: "all"
+  chart_type: "bar"
+  data: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(plotly)
+library(DT)
+
+# Get parameters
+variable <- params$variable
+province <- params$province
+chart_type <- params$chart_type
+data <- params$data
+
+# Variable name mapping
+var_name_map <- list(
+  "POVERTY" = "Kemiskinan",
+  "LOWEDU" = "Pendidikan Rendah",
+  "ILLITERATE" = "Buta Huruf"
+)
+var_name <- var_name_map[[variable]]
+
+# Location text
+location_text <- if(province == "all") "Seluruh Indonesia" else paste("Provinsi", province)
+```
+
+Variabel: `r variable` (`r var_name`)
+Lokasi:** `r location_text`
+Jenis Visualisasi:`r switch(chart_type, "table" = "Tabel", "bar" = "Grafik Batang", "histogram" = "Histogram")`
+```{r}
+# Filter data berdasarkan provinsi
+if(province == "all") {
+  filtered_data <- data
+  analysis_scope <- "nasional"
+} else {
+  filtered_data <- data %>% filter(PROVINCENAME == province)
+  analysis_scope <- "provinsi"
+}
+
+total_obs <- nrow(filtered_data)
+mean_val <- round(mean(filtered_data[[variable]], na.rm = TRUE), 2)
+median_val <- round(median(filtered_data[[variable]], na.rm = TRUE), 2)
+min_val <- round(min(filtered_data[[variable]], na.rm = TRUE), 2)
+max_val <- round(max(filtered_data[[variable]], na.rm = TRUE), 2)
+
+cat("**Cakupan analisis:** ", location_text, "\n")
+cat("**Jumlah observasi:** ", total_obs, "\n")
+cat("**Rata-rata:** ", mean_val, "%\n")
+cat("**Median:** ", median_val, "%\n")
+cat("**Minimum:** ", min_val, "%\n")
+cat("**Maksimum:** ", max_val, "%\n")
+```
+
+Visualisasi
+```{r}
+if(chart_type == "table") {
+  # Tampilkan tabel data
+  if(province == "all") {
+    # Tabel ringkasan per provinsi
+    table_data <- filtered_data %>%
+      group_by(PROVINCENAME) %>%
+      summarise(
+        Jumlah_Kabkota = n(),
+        Rata_rata = round(mean(.data[[variable]], na.rm = TRUE), 2),
+        Median = round(median(.data[[variable]], na.rm = TRUE), 2),
+        Min = round(min(.data[[variable]], na.rm = TRUE), 2),
+        Max = round(max(.data[[variable]], na.rm = TRUE), 2),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(Rata_rata))
+    
+    colnames(table_data) <- c("Provinsi", "Jumlah Kab/Kota", 
+                             paste("Rata-rata", var_name, "(%)"),
+                             paste("Median", var_name, "(%)"),
+                             paste("Min", var_name, "(%)"),
+                             paste("Max", var_name, "(%)"))
+  } else {
+    # Tabel detail per kabupaten/kota
+    table_data <- filtered_data %>%
+      select(DISTRICTNAME, all_of(variable)) %>%
+      arrange(desc(.data[[variable]]))
+    
+    colnames(table_data) <- c("Kabupaten/Kota", paste(var_name, "(%)"))
+  }
+  
+  DT::datatable(table_data, 
+                caption = paste("Data", var_name, "di", location_text),
+                options = list(pageLength = 15, scrollX = TRUE)) %>%
+    DT::formatRound(columns = 2:ncol(table_data), digits = 2)
+
+} else if(chart_type == "bar") {
+  # Grafik batang
+  if(province == "all") {
+    # Bar chart per provinsi
+    plot_data <- filtered_data %>%
+      group_by(PROVINCENAME) %>%
+      summarise(avg_value = mean(.data[[variable]], na.rm = TRUE), .groups = 'drop') %>%
+      arrange(desc(avg_value))
+    
+    p <- ggplot(plot_data, aes(x = reorder(PROVINCENAME, avg_value), y = avg_value)) +
+      geom_bar(stat = "identity", fill = "#3498db", alpha = 0.8) +
+      coord_flip() +
+      labs(title = paste("Rata-rata", var_name, "per Provinsi"),
+           subtitle = paste("Seluruh", nrow(plot_data), "provinsi di Indonesia"),
+           x = "Provinsi", 
+           y = paste("Rata-rata", var_name, "(%)")) +
+      theme_minimal(base_size = 12) +
+      theme(
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 10)
+      )
+  } else {
+    # Bar chart per kabupaten/kota
+    plot_data <- filtered_data %>%
+      arrange(desc(.data[[variable]]))
+    
+    p <- ggplot(plot_data, aes(x = reorder(DISTRICTNAME, .data[[variable]]), 
+                               y = .data[[variable]])) +
+      geom_bar(stat = "identity", fill = "#e74c3c", alpha = 0.8) +
+      coord_flip() +
+      labs(title = paste(var_name, "per Kabupaten/Kota"),
+           subtitle = paste("Provinsi", province, "- Total", nrow(plot_data), "kabupaten/kota"),
+           x = "Kabupaten/Kota", 
+           y = paste(var_name, "(%)")) +
+      theme_minimal(base_size = 10) +
+      theme(
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.text.y = element_text(size = 8)
+      )
+  }
+  
+  print(p)
+
+} else if(chart_type == "histogram") {
+  # Histogram
+  p <- ggplot(filtered_data, aes(x = .data[[variable]])) +
+    geom_histogram(bins = 30, fill = "#2ecc71", color = "white", alpha = 0.8) +
+    geom_vline(aes(xintercept = mean(.data[[variable]], na.rm = TRUE)), 
+               color = "#27ae60", linetype = "dashed", size = 1.2) +
+    geom_vline(aes(xintercept = median(.data[[variable]], na.rm = TRUE)), 
+               color = "#e67e22", linetype = "dotted", size = 1.2) +
+    labs(title = paste("Distribusi", var_name),
+         subtitle = paste(location_text, "- Total", total_obs, "observasi"),
+         x = paste(var_name, "(%)"), 
+         y = "Frekuensi") +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5)
+    ) +
+    annotate("text", x = Inf, y = Inf, 
+             label = paste("Rata-rata:", mean_val, "%\nMedian:", median_val, "%"), 
+             hjust = 1.1, vjust = 1.1, size = 4, color = "darkblue")
+  
+  print(p)
+}
+```
+Interpretasi
+```{r}
+interpretation <- switch(chart_type,
+  "table" = {
+    if(province == "all") {
+      paste("Tabel menampilkan ringkasan statistik", var_name, "untuk semua provinsi di Indonesia. Data diurutkan berdasarkan rata-rata tertinggi untuk memudahkan identifikasi provinsi dengan kondisi terburuk dan terbaik. Tabel ini berguna untuk perbandingan antar provinsi dan perencanaan kebijakan yang tepat sasaran.")
+    } else {
+      paste("Tabel menampilkan data detail", var_name, "untuk semua kabupaten/kota di", province, ". Data diurutkan dari tertinggi ke terendah untuk memudahkan identifikasi daerah yang memerlukan perhatian khusus dalam program pembangunan.")
+    }
+  },
+  "bar" = {
+    if(province == "all") {
+      paste("Grafik batang menunjukkan perbandingan rata-rata", var_name, "untuk SEMUA provinsi di Indonesia. Grafik diurutkan dari tertinggi ke terendah untuk memudahkan identifikasi provinsi dengan kondisi terburuk (bagian atas) dan terbaik (bagian bawah). Visualisasi ini membantu dalam penentuan prioritas kebijakan nasional.")
+    } else {
+      paste("Grafik batang menunjukkan perbandingan", var_name, "untuk SEMUA kabupaten/kota di", province, ". Data diurutkan dari tertinggi ke terendah untuk memudahkan identifikasi daerah dengan kondisi terburuk dan terbaik dalam provinsi. Informasi ini penting untuk alokasi sumber daya dan program pembangunan daerah.")
+    }
+  },
+  "histogram" = {
+    paste("Histogram menampilkan distribusi frekuensi", var_name, "di", location_text, ". Garis vertikal menunjukkan rata-rata (garis putus-putus) dan median (garis titik-titik). Bentuk distribusi membantu memahami sebaran data dan mengidentifikasi pola distribusi untuk", total_obs, "observasi yang dianalisis.")
+  }
+)
+
+cat("**Interpretasi:**", interpretation, "\n\n")
+
+# Analisis distribusi untuk histogram
+if(chart_type == "histogram") {
+  if(mean_val > median_val) {
+    cat("**Bentuk Distribusi:** Condong ke kanan (right-skewed), menunjukkan sebagian besar daerah memiliki nilai", var_name, "yang relatif rendah, namun ada beberapa daerah dengan nilai yang sangat tinggi.\n\n")
+  } else if(mean_val < median_val) {
+    cat("**Bentuk Distribusi:** Condong ke kiri (left-skewed), menunjukkan sebagian besar daerah memiliki nilai", var_name, "yang relatif tinggi, dengan beberapa daerah yang memiliki nilai sangat rendah.\n\n")
+  } else {
+    cat("**Bentuk Distribusi:** Relatif simetris, menunjukkan distribusi yang merata.\n\n")
+  }
+}
+
+# Identifikasi outlier atau nilai ekstrem
+if(chart_type %in% c("bar", "histogram")) {
+  q1 <- quantile(filtered_data[[variable]], 0.25, na.rm = TRUE)
+  q3 <- quantile(filtered_data[[variable]], 0.75, na.rm = TRUE)
+  iqr <- q3 - q1
+  outlier_threshold_high <- q3 + 1.5 * iqr
+  outlier_threshold_low <- q1 - 1.5 * iqr
+  
+  outliers_high <- filtered_data %>% 
+    filter(.data[[variable]] > outlier_threshold_high) %>%
+    nrow()
+  
+  outliers_low <- filtered_data %>% 
+    filter(.data[[variable]] < outlier_threshold_low) %>%
+    nrow()
+  
+  if(outliers_high > 0 || outliers_low > 0) {
+    cat("**Nilai Ekstrem:** Terdapat", outliers_high + outliers_low, "observasi dengan nilai ekstrem yang memerlukan perhatian khusus.\n\n")
+  }
+}
+```
+
+Visualisasi Agregat
+```{r}
+# Selalu tampilkan grafik agregat untuk semua provinsi
+agg_data <- data %>%
+  group_by(PROVINCENAME) %>%
+  summarise(
+    Kemiskinan = mean(POVERTY, na.rm = TRUE),
+    `Buta Huruf` = mean(ILLITERATE, na.rm = TRUE),
+    `Pendidikan Rendah` = mean(LOWEDU, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  tidyr::pivot_longer(-PROVINCENAME, names_to = "Indikator", values_to = "Nilai") %>%
+  arrange(desc(Nilai))
+
+# Highlight variabel yang dipilih
+agg_data$Highlight <- ifelse(
+  (agg_data$Indikator == "Kemiskinan" & variable == "POVERTY") |
+  (agg_data$Indikator == "Buta Huruf" & variable == "ILLITERATE") |
+  (agg_data$Indikator == "Pendidikan Rendah" & variable == "LOWEDU"),
+  "Selected", "Other"
+)
+
+p_agg <- ggplot(agg_data, aes(x = reorder(PROVINCENAME, Nilai), y = Nilai, 
+                              fill = Indikator, alpha = Highlight)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_alpha_manual(values = c("Selected" = 1.0, "Other" = 0.4), guide = "none") +
+  coord_flip() +
+  labs(title = "Perbandingan Indikator Demografi per Provinsi",
+       subtitle = paste("Variabel", var_name, "ditonjolkan"),
+       x = "Provinsi", y = "Persentase (%)") +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom", 
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  ) +
+  scale_fill_brewer(type = "qual", palette = "Set2")
+
+print(p_agg)
+```
+

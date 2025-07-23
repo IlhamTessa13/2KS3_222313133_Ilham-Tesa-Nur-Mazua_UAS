@@ -1,0 +1,284 @@
+---
+title: "Laporan Analisis Varians (ANOVA)"
+output: html_document
+params:
+  anova_type: "oneway"
+  variable: "LOWEDU"
+  provinces: !r c("DKI JAKARTA", "JAWA BARAT", "JAWA TENGAH")
+  alpha: 0.05
+  data: NULL
+  result: NULL
+  posthoc_needed: FALSE
+  posthoc_result: NULL
+  normality_ok: TRUE
+  homogeneity_ok: TRUE
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(car)
+library(agricolae)
+```
+Jenis ANOVA: `r if(params$anova_type == "oneway") "One-Way ANOVA" else "Two-Way ANOVA"`
+Variabel yang dianalisis:`r params$variable`
+Provinsi yang dibandingkan: `r paste(params$provinces, collapse = ", ")`
+Tingkat signifikansi: α = `r params$alpha`
+```{r}
+# Informasi data
+var_name <- switch(params$variable,
+                   "POVERTY" = "Kemiskinan",
+                   "LOWEDU" = "Pendidikan Rendah", 
+                   "ILLITERATE" = "Buta Huruf")
+
+total_obs <- nrow(params$data)
+num_provinces <- length(params$provinces)
+```
+
+Variabel dependen: `r var_name` (`r params$variable`)
+Jumlah provinsi: `r num_provinces` provinsi
+Total observasi: `r total_obs` kabupaten/kota
+Metode: `r if(params$anova_type == "oneway") "One-Way ANOVA" else "Two-Way ANOVA dengan interaksi"`
+```{r}
+if(params$anova_type == "oneway") {
+  cat("**One-Way ANOVA:**\n")
+  cat("- **H₀:** μ₁ = μ₂ = μ₃ = ... (Rata-rata", tolower(var_name), "sama di semua provinsi)\n")
+  cat("- **H₁:** Minimal ada satu rata-rata yang berbeda\n\n")
+} else {
+  cat("**Two-Way ANOVA:**\n")
+  cat("- **H₀₁:** Tidak ada perbedaan rata-rata", tolower(var_name), "antar provinsi\n")
+  cat("- **H₀₂:** Tidak ada perbedaan rata-rata", tolower(var_name), "antar kategori\n")
+  cat("- **H₀₃:** Tidak ada interaksi antara provinsi dan kategori\n")
+  cat("- **H₁:** Minimal ada satu hipotesis nol yang ditolak\n\n")
+}
+```
+1. Uji Normalitas
+```{r}
+cat("**Status Normalitas:** ")
+if(params$normality_ok) {
+  cat("✅ **TERPENUHI** - Semua kelompok berdistribusi normal\n\n")
+  cat("**Interpretasi:** Data dari semua kelompok mengikuti distribusi normal, sehingga asumsi normalitas untuk ANOVA terpenuhi.\n\n")
+} else {
+  cat("❌ **TIDAK TERPENUHI** - Ada kelompok yang tidak berdistribusi normal\n\n")
+  cat("**Interpretasi:** Beberapa kelompok data tidak mengikuti distribusi normal. Ini melanggar asumsi ANOVA parametrik.\n\n")
+}
+```
+2. Uji Homogenitas Varians
+```{r}
+cat("**Status Homogenitas:** ")
+if(params$homogeneity_ok) {
+  cat("✅ **TERPENUHI** - Varians antar kelompok homogen\n\n")
+  cat("**Interpretasi:** Varians antar kelompok relatif sama, sehingga asumsi homogenitas varians untuk ANOVA terpenuhi.\n\n")
+} else {
+  cat("❌ **TIDAK TERPENUHI** - Varians antar kelompok tidak homogen\n\n")
+  cat("**Interpretasi:** Varians antar kelompok berbeda secara signifikan. Ini melanggar asumsi homogenitas varians ANOVA.\n\n")
+}
+```
+Statistik Deskriptif
+```{r}
+if(params$anova_type == "oneway") {
+  summary_stats <- params$data %>%
+    group_by(PROVINCENAME) %>%
+    summarise(
+      n = n(),
+      Mean = round(mean(get(params$variable), na.rm = TRUE), 3),
+      SD = round(sd(get(params$variable), na.rm = TRUE), 3),
+      Min = round(min(get(params$variable), na.rm = TRUE), 3),
+      Max = round(max(get(params$variable), na.rm = TRUE), 3),
+      .groups = 'drop'
+    )
+  
+  kable(summary_stats, 
+        col.names = c("Provinsi", "n", "Rata-rata", "Std. Deviasi", "Minimum", "Maksimum"),
+        caption = paste("Statistik Deskriptif", params$variable, "per Provinsi"))
+        
+} else {
+  cat_var <- paste0(params$variable, "_CAT")
+  summary_stats <- params$data %>%
+    group_by(PROVINCENAME, get(cat_var)) %>%
+    summarise(
+      n = n(),
+      Mean = round(mean(get(params$variable), na.rm = TRUE), 3),
+      SD = round(sd(get(params$variable), na.rm = TRUE), 3),
+      .groups = 'drop'
+    )
+  names(summary_stats)[2] <- "Kategori"
+  
+  kable(summary_stats,
+        col.names = c("Provinsi", "Kategori", "n", "Rata-rata", "Std. Deviasi"),
+        caption = paste("Statistik Deskriptif", params$variable, "per Provinsi dan Kategori"))
+}
+```
+Hasil ANOVA
+```{r}
+if(!is.null(params$result)) {
+  anova_summary <- summary(params$result)
+  anova_table <- anova_summary[[1]]
+  
+  cat("**Tabel ANOVA:**\n\n")
+  print(kable(anova_table, digits = 4, caption = "Hasil Analisis Varians"))
+  
+  # Interpretasi hasil
+  p_values <- anova_table[["Pr(>F)"]]
+  
+  cat("\n**Keputusan dan Interpretasi:**\n\n")
+  
+  if(params$anova_type == "oneway") {
+    p_value <- p_values[1]
+    
+    if(p_value < params$alpha) {
+      cat("✅ **TOLAK H₀** (p-value =", format(p_value, scientific = TRUE), "< α =", params$alpha, ")\n\n")
+      cat("**Kesimpulan:** Terdapat perbedaan yang signifikan dalam rata-rata", tolower(var_name), "di antara provinsi yang dianalisis.\n\n")
+      cat("**Interpretasi Praktis:** Kondisi", tolower(var_name), "tidak homogen antar provinsi. Diperlukan kebijakan yang disesuaikan dengan kondisi spesifik masing-masing provinsi.\n\n")
+    } else {
+      cat("❌ **GAGAL TOLAK H₀** (p-value =", format(p_value, scientific = TRUE), "> α =", params$alpha, ")\n\n")
+      cat("**Kesimpulan:** Tidak terdapat perbedaan yang signifikan dalam rata-rata", tolower(var_name), "di antara provinsi yang dianalisis.\n\n")
+      cat("**Interpretasi Praktis:** Kondisi", tolower(var_name), "relatif homogen antar provinsi. Dapat menggunakan pendekatan kebijakan yang seragam.\n\n")
+    }
+    
+  } else {
+    p_province <- p_values[1]
+    p_category <- p_values[2]
+    p_interaction <- p_values[3]
+    
+    cat("**Efek Provinsi:**\n")
+    if(p_province < params$alpha) {
+      cat("✅ **SIGNIFIKAN** (p =", format(p_province, scientific = TRUE), ")\n")
+      cat("Ada perbedaan rata-rata", tolower(var_name), "antar provinsi.\n\n")
+    } else {
+      cat("❌ **TIDAK SIGNIFIKAN** (p =", format(p_province, scientific = TRUE), ")\n")
+      cat("Tidak ada perbedaan rata-rata", tolower(var_name), "antar provinsi.\n\n")
+    }
+    
+    cat("**Efek Kategori:**\n")
+    if(p_category < params$alpha) {
+      cat("✅ **SIGNIFIKAN** (p =", format(p_category, scientific = TRUE), ")\n")
+      cat("Ada perbedaan rata-rata", tolower(var_name), "antar kategori.\n\n")
+    } else {
+      cat("❌ **TIDAK SIGNIFIKAN** (p =", format(p_category, scientific = TRUE), ")\n")
+      cat("Tidak ada perbedaan rata-rata", tolower(var_name), "antar kategori.\n\n")
+    }
+    
+    cat("**Efek Interaksi:**\n")
+    if(p_interaction < params$alpha) {
+      cat("✅ **SIGNIFIKAN** (p =", format(p_interaction, scientific = TRUE), ")\n")
+      cat("Ada interaksi antara provinsi dan kategori.\n\n")
+    } else {
+      cat("❌ **TIDAK SIGNIFIKAN** (p =", format(p_interaction, scientific = TRUE), ")\n")
+      cat("Tidak ada interaksi antara provinsi dan kategori.\n\n")
+    }
+  }
+}
+```
+
+Uji Lanjutan (POS-HOC)
+```{r}
+if(params$posthoc_needed && !is.null(params$posthoc_result)) {
+  cat("**Uji Lanjutan Duncan:**\n\n")
+  cat("Karena hasil ANOVA menunjukkan perbedaan yang signifikan, dilakukan uji lanjutan untuk mengetahui kelompok mana yang berbeda.\n\n")
+  
+  if(params$anova_type == "oneway") {
+    if(class(params$posthoc_result)[1] == "group") {
+      # Duncan test result
+      groups_df <- params$posthoc_result$groups
+      groups_df$Provinsi <- rownames(groups_df)
+      groups_df <- groups_df[, c("Provinsi", names(groups_df)[1], "groups")]
+      names(groups_df)[2] <- "Rata_rata"
+      
+      kable(groups_df, 
+            col.names = c("Provinsi", "Rata-rata", "Kelompok"),
+            caption = "Hasil Uji Lanjutan Duncan")
+      
+      cat("\n**Interpretasi Pengelompokan:**\n")
+      cat("- Provinsi dengan huruf yang sama tidak berbeda signifikan\n")
+      cat("- Provinsi dengan huruf berbeda menunjukkan perbedaan yang signifikan\n")
+      cat("- Semakin jauh urutan huruf, semakin besar perbedaannya\n\n")
+    }
+  }
+  
+  cat("**Implikasi Kebijakan:**\n")
+  cat("Provinsi yang berada dalam kelompok berbeda memerlukan pendekatan kebijakan yang disesuaikan dengan kondisi spesifik masing-masing daerah.\n\n")
+  
+} else if(!params$posthoc_needed) {
+  cat("**Uji lanjutan tidak diperlukan** karena hasil ANOVA menunjukkan tidak ada perbedaan yang signifikan antar kelompok.\n\n")
+}
+```
+Visualisasi
+```{r}
+if(params$anova_type == "oneway") {
+  p <- ggplot(params$data, aes(x = PROVINCENAME, y = get(params$variable))) +
+    geom_boxplot(fill = "lightblue", alpha = 0.7) +
+    geom_jitter(width = 0.2, alpha = 0.5, size = 1) +
+    labs(
+      title = paste("Boxplot", params$variable, "per Provinsi"),
+      x = "Provinsi",
+      y = paste(params$variable, "(%)")
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    )
+    
+} else {
+  cat_var <- paste0(params$variable, "_CAT")
+  p <- ggplot(params$data, aes(x = PROVINCENAME, y = get(params$variable), fill = get(cat_var))) +
+    geom_boxplot(alpha = 0.7) +
+    scale_fill_brewer(type = "qual", palette = "Set2") +
+    labs(
+      title = paste("Boxplot", params$variable, "berdasarkan Provinsi dan Kategori"),
+      x = "Provinsi",
+      y = paste(params$variable, "(%)"),
+      fill = "Kategori"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "bottom"
+    )
+}
+
+print(p)
+```
+Kesimpulan
+```{r}
+cat("**Kesimpulan Utama:**\n\n")
+
+if(!is.null(params$result)) {
+  anova_summary <- summary(params$result)
+  p_values <- anova_summary[[1]][["Pr(>F)"]]
+  
+  if(params$anova_type == "oneway") {
+    if(p_values[1] < params$alpha) {
+      cat("1. Terdapat perbedaan yang signifikan dalam", tolower(var_name), "antar provinsi yang dianalisis\n")
+      cat("2. Kondisi", tolower(var_name), "tidak homogen di seluruh wilayah\n")
+      if(params$posthoc_needed) {
+        cat("3. Uji lanjutan menunjukkan pengelompokan provinsi berdasarkan tingkat", tolower(var_name), "\n")
+      }
+    } else {
+      cat("1. Tidak terdapat perbedaan yang signifikan dalam", tolower(var_name), "antar provinsi\n")
+      cat("2. Kondisi", tolower(var_name), "relatif homogen di seluruh wilayah yang dianalisis\n")
+    }
+  } else {
+    sig_count <- sum(p_values[1:3] < params$alpha, na.rm = TRUE)
+    cat("1. Dari 3 efek yang diuji,", sig_count, "efek menunjukkan signifikansi statistik\n")
+    
+    if(p_values[1] < params$alpha) {
+      cat("2. Efek provinsi signifikan - ada perbedaan antar provinsi\n")
+    }
+    if(p_values[2] < params$alpha) {
+      cat("3. Efek kategori signifikan - ada perbedaan antar tingkat kategori\n")
+    }
+    if(p_values[3] < params$alpha) {
+      cat("4. Efek interaksi signifikan - pola perbedaan kompleks antara provinsi dan kategori\n")
+    }
+  }
+}
+
+
+```
+

@@ -1,0 +1,208 @@
+---
+title: "Laporan Uji Normalitas"
+output:
+  html_document
+params:
+  variable: "POVERTY"
+  province: "all"
+  test_type: "Shapiro-Wilk"
+  data: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+
+
+variable <- params$variable
+province <- params$province
+test_type <- params$test_type
+data <- params$data
+
+
+var_name_map <- list(
+  "POVERTY" = "Kemiskinan",
+  "LOWEDU" = "Pendidikan Rendah",
+  "ILLITERATE" = "Buta Huruf"
+)
+var_name <- var_name_map[[variable]]
+
+# Location text
+location_text <- if(province == "all") "Seluruh Indonesia" else paste("Provinsi", province)
+```
+Variabel: `r variable` (`r var_name`)
+Lokasi: `r location_text`
+Uji yang Digunakan: `r test_type`
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  var_data <- data[[variable]]
+  sample_size <- length(var_data)
+  
+  cat("**Jumlah observasi (n):**", sample_size, "\n")
+  cat("**Rata-rata:**", round(mean(var_data, na.rm = TRUE), 4), "\n")
+  cat("**Median:**", round(median(var_data, na.rm = TRUE), 4), "\n")
+  cat("**Standar deviasi:**", round(sd(var_data, na.rm = TRUE), 4), "\n")
+  cat("**Minimum:**", round(min(var_data, na.rm = TRUE), 4), "\n")
+  cat("**Maksimum:**", round(max(var_data, na.rm = TRUE), 4), "\n")
+} else {
+  cat("Data tidak tersedia untuk analisis.\n")
+}
+```
+Hipotesis
+
+H₀: Data berdistribusi normal
+H₁: Data tidak berdistribusi normal
+Tingkat signifikansi (α): 0.05
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  var_data <- data[[variable]]
+  sample_size <- length(var_data)
+  
+  if(sample_size > 50) {
+    cat("**Uji Kolmogorov-Smirnov** dipilih karena ukuran sampel besar (n =", sample_size, "> 50).\n\n")
+    cat("Uji ini lebih sesuai untuk sampel besar dan memiliki hasil yang baik untuk mendeteksi penyimpangan dari normalitas.")
+  } else {
+    cat("**Uji Shapiro-Wilk** dipilih karena ukuran sampel kecil (n =", sample_size, "≤ 50).\n\n")
+    cat("Uji ini merupakan uji normalitas yang paling sesuai untuk sampel kecil.")
+  }
+}
+```
+Hasil Uji Statistik
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  var_data <- data[[variable]]
+  sample_size <- length(var_data)
+  
+  if(sample_size > 50) {
+
+    test_result <- ks.test(var_data, "pnorm",
+                           mean = mean(var_data, na.rm = TRUE),
+                           sd = sd(var_data, na.rm = TRUE))
+    
+    cat("### Hasil Uji Kolmogorov-Smirnov\n\n")
+    cat("- **D-statistik:** ", round(test_result$statistic, 6), "\n")
+    cat("- **p-value:** ", format(test_result$p.value, scientific = TRUE), "\n\n")
+    
+  } else {
+    test_result <- shapiro.test(var_data)
+    
+    cat("### Hasil Uji Shapiro-Wilk\n\n")
+    cat("- **W-statistik:** ", round(test_result$statistic, 6), "\n")
+    cat("- **p-value:** ", format(test_result$p.value, scientific = TRUE), "\n\n")
+  }
+  
+  cat("### Keputusan\n\n")
+  if(test_result$p.value > 0.05) {
+    cat("**GAGAL TOLAK H₀**\n\n")
+    cat("**Kesimpulan:** Data berdistribusi normal ✓")
+  } else {
+    cat("**TOLAK H₀**\n\n")
+    cat("**Kesimpulan:** Data TIDAK berdistribusi normal ✗")
+  }
+} else {
+  cat("Analisis tidak dapat diselesaikan karena data tidak tersedia.\n")
+}
+```
+Visualisasi
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  var_data <- data[[variable]]
+  
+
+  p1 <- ggplot(data.frame(sample = var_data), aes(sample = sample)) +
+    stat_qq(color = "#2c7fb8", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "#d73027", linetype = "dashed", size = 1) +
+    labs(
+      title = paste("Q-Q Plot:", variable),
+      subtitle = paste("n =", length(var_data)),
+      x = "Theoretical Quantiles",
+      y = "Sample Quantiles"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5)
+    )
+  
+  p2 <- ggplot(data.frame(x = var_data), aes(x = x)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "#74c476",
+                   color = "white", alpha = 0.8) +
+    geom_density(color = "#d73027", size = 1.2) +
+    stat_function(fun = dnorm,
+                  args = list(mean = mean(var_data, na.rm = TRUE),
+                              sd = sd(var_data, na.rm = TRUE)),
+                  color = "#2c7fb8", size = 1.2, linetype = "dashed") +
+    labs(
+      title = paste("Histogram dan Kurva Normal:", variable),
+      subtitle = paste("n =", length(var_data)),
+      x = variable,
+      y = "Density"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5)
+    )
+  
+  grid.arrange(p1, p2, ncol = 2)
+}
+```
+Interpretasi dan Rekomendasi
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  var_data <- data[[variable]]
+  sample_size <- length(var_data)
+
+  if(sample_size > 50) {
+    test_result <- ks.test(var_data, "pnorm",
+                           mean = mean(var_data, na.rm = TRUE),
+                           sd = sd(var_data, na.rm = TRUE))
+    test_name <- "Kolmogorov-Smirnov"
+  } else {
+    test_result <- shapiro.test(var_data)
+    test_name <- "Shapiro-Wilk"
+  }
+  
+  is_normal <- test_result$p.value > 0.05
+  
+  var_name_lower <- switch(variable,
+                          "POVERTY" = "kemiskinan",
+                          "LOWEDU" = "pendidikan rendah",
+                          "ILLITERATE" = "buta huruf")
+  
+  cat("### Interpretasi Statistik\n\n")
+  
+  if(is_normal) {
+    cat("Dari uji", test_name, "didapatkan bahwa data", var_name_lower, "di", tolower(location_text), 
+        "**MENGIKUTI** distribusi normal dengan p-value =", format(test_result$p.value, scientific = TRUE), 
+        "> α = 0.05.\n\n")
+    
+    cat("### Rekomendasi\n\n")
+    cat("✅ **Asumsi normalitas terpenuhi** untuk analisis parametrik\n\n")
+    cat("✅ Dapat menggunakan uji statistik parametrik seperti:\n")
+    cat("- Uji t (satu sampel atau dua sampel)\n")
+    cat("- ANOVA\n")
+    cat("- Regresi linear\n")
+    cat("- Korelasi Pearson\n\n")
+    
+  } else {
+    cat("Dari uji", test_name, "didapatkan bahwa data", var_name_lower, "di", tolower(location_text), 
+        "**TIDAK MENGIKUTI** distribusi normal dengan p-value =", format(test_result$p.value, scientific = TRUE), 
+        "< α = 0.05.\n\n")
+    
+    cat("### Rekomendasi\n\n")
+    cat("❌ **Asumsi normalitas tidak terpenuhi** untuk analisis parametrik\n\n")
+    cat("🔄 **Alternatif yang dapat dilakukan:**\n")
+  }
+  
+  cat("### Catatan Metodologi\n\n")
+  cat("- Uji normalitas sensitif terhadap ukuran sampel\n")
+  
+} else {
+  cat("Interpretasi tidak dapat diberikan karena data tidak tersedia.\n")
+}
+```
+

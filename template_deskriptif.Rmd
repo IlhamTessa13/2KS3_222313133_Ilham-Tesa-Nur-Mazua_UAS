@@ -1,0 +1,152 @@
+---
+title: "Laporan Statistik Deskriptif"
+output:
+  html_document
+params:
+  data: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(DT)
+
+# Get data
+data <- params$data
+```
+
+Dataset: Dashboard Demografi Indonesia
+Jumlah Observasi: `r nrow(data)`
+Jumlah Provinsi:`r length(unique(data$PROVINCENAME))`
+
+Dataset ini berisi informasi demografi dari `r nrow(data)` kabupaten/kota di Indonesia yang tersebar di `r length(unique(data$PROVINCENAME))` provinsi. Data mencakup tiga indikator utama: kemiskinan, pendidikan rendah, dan buta huruf.
+```{r}
+# Hitung statistik deskriptif untuk 3 variabel utama
+desc_stats <- data %>%
+  select(POVERTY, ILLITERATE, LOWEDU) %>%
+  summarise_all(list(
+    N = ~length(.),
+    Mean = ~round(mean(., na.rm = TRUE), 4),
+    Median = ~round(median(., na.rm = TRUE), 4),
+    Min = ~round(min(., na.rm = TRUE), 4),
+    Max = ~round(max(., na.rm = TRUE), 4),
+    SD = ~round(sd(., na.rm = TRUE), 4),
+    Q1 = ~round(quantile(., 0.25, na.rm = TRUE), 4),
+    Q3 = ~round(quantile(., 0.75, na.rm = TRUE), 4),
+    Skewness = ~round(moments::skewness(., na.rm = TRUE), 4),
+    Kurtosis = ~round(moments::kurtosis(., na.rm = TRUE), 4)
+  )) %>%
+  tidyr::pivot_longer(everything(), names_to = "Statistik", values_to = "Nilai") %>%
+  tidyr::separate(Statistik, into = c("Variabel", "Measure"), sep = "_") %>%
+  tidyr::pivot_wider(names_from = Measure, values_from = Nilai)
+
+# Tampilkan tabel dengan styling
+kable(desc_stats, 
+      caption = "Statistik Deskriptif Variabel Utama",
+      col.names = c("Variabel", "N", "Rata-rata", "Median", "Min", "Max", "Std Dev", "Q1", "Q3", "Skewness", "Kurtosis")) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+Interpretasi Statistik Deskriptif
+
+Kemiskinan
+```{r}
+poverty_stats <- data %>% 
+  summarise(
+    mean = round(mean(POVERTY, na.rm = TRUE), 2),
+    median = round(median(POVERTY, na.rm = TRUE), 2),
+    sd = round(sd(POVERTY, na.rm = TRUE), 2),
+    min = round(min(POVERTY, na.rm = TRUE), 2),
+    max = round(max(POVERTY, na.rm = TRUE), 2)
+  )
+
+cat("**Rata-rata persentase penduduk miskin:** ", poverty_stats$mean, "%\n")
+cat("**Median:** ", poverty_stats$median, "%\n")
+cat("**Standar deviasi:** ", poverty_stats$sd, "%\n")
+cat("**Rentang:** ", poverty_stats$min, "% - ", poverty_stats$max, "%\n\n")
+
+if(poverty_stats$mean > poverty_stats$median) {
+  cat("**Distribusi:** Condong ke kanan (right-skewed), menunjukkan beberapa daerah memiliki tingkat kemiskinan yang sangat tinggi.\n\n")
+} else if(poverty_stats$mean < poverty_stats$median) {
+  cat("**Distribusi:** Condong ke kiri (left-skewed), menunjukkan sebagian besar daerah memiliki tingkat kemiskinan rendah.\n\n")
+} else {
+  cat("**Distribusi:** Relatif simetris.\n\n")
+}
+
+cat("**Interpretasi:** Tingkat kemiskinan di Indonesia bervariasi dengan rata-rata ", poverty_stats$mean, "%. Variasi yang cukup besar (SD = ", poverty_stats$sd, "%) menunjukkan adanya kesenjangan antar daerah yang memerlukan perhatian khusus dalam kebijakan pengentasan kemiskinan.\n")
+```
+
+Buta Huruf
+```{r}
+illiterate_stats <- data %>% 
+  summarise(
+    mean = round(mean(ILLITERATE, na.rm = TRUE), 2),
+    median = round(median(ILLITERATE, na.rm = TRUE), 2),
+    sd = round(sd(ILLITERATE, na.rm = TRUE), 2),
+    min = round(min(ILLITERATE, na.rm = TRUE), 2),
+    max = round(max(ILLITERATE, na.rm = TRUE), 2)
+  )
+
+cat("**Rata-rata persentase penduduk buta huruf:** ", illiterate_stats$mean, "%\n")
+cat("**Median:** ", illiterate_stats$median, "%\n")
+cat("**Standar deviasi:** ", illiterate_stats$sd, "%\n")
+cat("**Rentang:** ", illiterate_stats$min, "% - ", illiterate_stats$max, "%\n\n")
+
+if(illiterate_stats$mean > illiterate_stats$median) {
+  cat("**Distribusi:** Condong ke kanan (right-skewed), menunjukkan beberapa daerah memiliki tingkat buta huruf yang sangat tinggi.\n\n")
+} else if(illiterate_stats$mean < illiterate_stats$median) {
+  cat("**Distribusi:** Condong ke kiri (left-skewed), menunjukkan sebagian besar daerah memiliki tingkat buta huruf rendah.\n\n")
+} else {
+  cat("**Distribusi:** Relatif simetris.\n\n")
+}
+
+cat("**Interpretasi:** Tingkat buta huruf di Indonesia relatif rendah dengan rata-rata ", illiterate_stats$mean, "%. Namun masih terdapat variasi antar daerah yang perlu mendapat perhatian dalam program literasi.\n")
+```
+Pendidikan Rendah
+```{r}
+lowedu_stats <- data %>% 
+  summarise(
+    mean = round(mean(LOWEDU, na.rm = TRUE), 2),
+    median = round(median(LOWEDU, na.rm = TRUE), 2),
+    sd = round(sd(LOWEDU, na.rm = TRUE), 2),
+    min = round(min(LOWEDU, na.rm = TRUE), 2),
+    max = round(max(LOWEDU, na.rm = TRUE), 2)
+  )
+
+cat("**Rata-rata persentase penduduk berpendidikan rendah:** ", lowedu_stats$mean, "%\n")
+cat("**Median:** ", lowedu_stats$median, "%\n")
+cat("**Standar deviasi:** ", lowedu_stats$sd, "%\n")
+cat("**Rentang:** ", lowedu_stats$min, "% - ", lowedu_stats$max, "%\n\n")
+
+if(lowedu_stats$mean > lowedu_stats$median) {
+  cat("**Distribusi:** Condong ke kanan (right-skewed), menunjukkan beberapa daerah memiliki tingkat pendidikan rendah yang sangat tinggi.\n\n")
+} else if(lowedu_stats$mean < lowedu_stats$median) {
+  cat("**Distribusi:** Condong ke kiri (left-skewed), menunjukkan sebagian besar daerah memiliki tingkat pendidikan rendah yang rendah.\n\n")
+} else {
+  cat("**Distribusi:** Relatif simetris.\n\n")
+}
+
+cat("**Interpretasi:** Tingkat pendidikan rendah masih cukup tinggi dengan rata-rata ", lowedu_stats$mean, "%. Ini menunjukkan perlunya peningkatan akses dan kualitas pendidikan di seluruh Indonesia.\n")
+```
+Ringkasan per Provinsi
+```{r}
+province_summary <- data %>%
+  group_by(PROVINCENAME) %>%
+  summarise(
+    Jumlah_Kabkota = n(),
+    Rata_rata_POVERTY = round(mean(POVERTY, na.rm = TRUE), 2),
+    Rata_rata_ILLITERATE = round(mean(ILLITERATE, na.rm = TRUE), 2),
+    Rata_rata_LOWEDU = round(mean(LOWEDU, na.rm = TRUE), 2),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(Rata_rata_POVERTY))
+
+# Tampilkan tabel interaktif
+DT::datatable(province_summary, 
+              caption = "Ringkasan Statistik per Provinsi",
+              colnames = c("Provinsi", "Jumlah Kab/Kota", "Kemiskinan (%)", "Buta Huruf (%)", "Pendidikan Rendah (%)"),
+              options = list(pageLength = 15, scrollX = TRUE)) %>%
+  DT::formatRound(columns = c("Rata_rata_POVERTY", "Rata_rata_ILLITERATE", "Rata_rata_LOWEDU"), digits = 2)
+```
+

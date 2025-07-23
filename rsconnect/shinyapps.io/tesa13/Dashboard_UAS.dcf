@@ -1,0 +1,12 @@
+name: Dashboard_UAS
+title: Dashboard_UAS
+username: tesa13
+account: tesa13
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15111691
+bundleId: 10658984
+url: https://tesa13.shinyapps.io/Dashboard_UAS/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

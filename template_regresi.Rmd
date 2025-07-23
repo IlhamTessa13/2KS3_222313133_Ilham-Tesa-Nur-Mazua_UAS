@@ -1,0 +1,380 @@
+---
+title: "Laporan Analisis Regresi Linear"
+output: html_document
+params:
+  dependent: "POVERTY"
+  independent: !r c("LOWEDU", "ILLITERATE")
+  alpha: 0.05
+  include_assumptions: TRUE
+  model: NULL
+  data: NULL
+  formula_text: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(car)
+library(lmtest)
+library(broom)
+```
+Formula Model: `r params$formula_text`
+Variabel Dependen: `r params$dependent`
+Variabel Independen: `r paste(params$independent, collapse = ", ")`
+Tingkat Signifikansi: α = `r params$alpha`
+
+```{r}
+dep_name <- switch(params$dependent,
+                   "POVERTY" = "Kemiskinan",
+                   "LOWEDU" = "Pendidikan Rendah",
+                   "ILLITERATE" = "Buta Huruf")
+
+indep_names <- sapply(params$independent, function(x) {
+  switch(x,
+         "POVERTY" = "Kemiskinan",
+         "LOWEDU" = "Pendidikan Rendah",
+         "ILLITERATE" = "Buta Huruf")
+})
+
+total_obs <- nrow(params$data)
+num_predictors <- length(params$independent)
+```
+Variabel dependen: `r dep_name` (`r params$dependent`)
+Variabel independen:`r paste(indep_names, collapse = ", ")`
+Jumlah observasi: `r total_obs` kabupaten/kota
+Jumlah prediktor:** `r num_predictors` variabel
+Metode: Ordinary Least Squares (OLS)
+
+Hipotesis
+
+- H₀: β₁ = β₂ = ... = 0 (Tidak ada pengaruh signifikan variabel independen terhadap `r dep_name`)
+- H₁: Minimal ada satu βᵢ ≠ 0 (Ada pengaruh signifikan minimal satu variabel independen terhadap `r dep_name`)
+```{r}
+for(i in 1:length(params$independent)) {
+  var_name <- switch(params$independent[i],
+                     "POVERTY" = "Kemiskinan",
+                     "LOWEDU" = "Pendidikan Rendah",
+                     "ILLITERATE" = "Buta Huruf")
+  
+  cat("**", var_name, " (", params$independent[i], "):**\n", sep = "")
+  cat("- H₀: β", i, " = 0 (", var_name, " tidak berpengaruh terhadap ", dep_name, ")\n", sep = "")
+  cat("- H₁: β", i, " ≠ 0 (", var_name, " berpengaruh terhadap ", dep_name, ")\n\n", sep = "")
+}
+```
+
+Hasil Regresi
+```{r}
+if(!is.null(params$model)) {
+  model_summary <- summary(params$model)
+  
+  cat("### Ringkasan Model\n\n")
+  
+  r_squared <- round(model_summary$r.squared, 4)
+  adj_r_squared <- round(model_summary$adj.r.squared, 4)
+  f_stat <- round(model_summary$fstatistic[1], 4)
+  p_value_model <- pf(model_summary$fstatistic[1], model_summary$fstatistic[2], model_summary$fstatistic[3], lower.tail = FALSE)
+  
+  cat("**Statistik Model:**\n")
+  cat("- R-squared:", paste0(r_squared, " (", round(r_squared * 100, 2), "%)"), "\n")
+  cat("- Adjusted R-squared:", paste0(adj_r_squared, " (", round(adj_r_squared * 100, 2), "%)"), "\n")
+  cat("- F-statistik:", f_stat, "\n")
+  cat("- p-value (model):", format(p_value_model, scientific = TRUE), "\n\n")
+  
+  cat("### Koefisien Regresi\n\n")
+
+  coef_table <- model_summary$coefficients
+  coef_df <- data.frame(
+    Variabel = rownames(coef_table),
+    Koefisien = round(coef_table[, 1], 4),
+    Std_Error = round(coef_table[, 2], 4),
+    t_value = round(coef_table[, 3], 4),
+    p_value = coef_table[, 4],
+    Signifikan = ifelse(coef_table[, 4] < params$alpha, "Ya", "Tidak")
+  )
+  
+  kable(coef_df, 
+        col.names = c("Variabel", "Koefisien", "Std. Error", "t-value", "p-value", "Signifikan"),
+        caption = "Koefisien Regresi")
+}
+```
+Persamaan Regresi
+```{r}
+if(!is.null(params$model)) {
+  coef <- coef(params$model)
+  
+  cat("### Model Persamaan\n\n")
+   equation <- paste(params$dependent, "=", round(coef[1], 4))
+  for(i in 2:length(coef)) {
+    sign <- if(coef[i] >= 0) " + " else " - "
+    equation <- paste0(equation, sign, abs(round(coef[i], 4)), " × ", names(coef)[i])
+  }
+  
+  cat("**", equation, "**\n\n")
+  
+  cat("### Interpretasi Koefisien\n\n")
+  
+ 
+  cat("- **Konstanta (", round(coef[1], 4), "):** Nilai prediksi ", dep_name, " ketika semua variabel independen bernilai 0\n\n", sep = "")
+  
+
+  for(i in 2:length(coef)) {
+    var_name <- switch(names(coef)[i],
+                       "POVERTY" = "kemiskinan",
+                       "LOWEDU" = "pendidikan rendah",
+                       "ILLITERATE" = "buta huruf")
+    
+    coef_val <- coef[i]
+    is_sig <- coef_df$Signifikan[i] == "Ya"
+    
+    if(is_sig) {
+      if(coef_val > 0) {
+        cat("- **", names(coef)[i], " (", round(coef_val, 4), "):** Setiap peningkatan 1% pada ", var_name, " akan **meningkatkan** ", tolower(dep_name), " sebesar ", abs(round(coef_val, 4)), "% (signifikan)\n", sep = "")
+      } else {
+        cat("- **", names(coef)[i], " (", round(coef_val, 4), "):** Setiap peningkatan 1% pada ", var_name, " akan **menurunkan** ", tolower(dep_name), " sebesar ", abs(round(coef_val, 4)), "% (signifikan)\n", sep = "")
+      }
+    } else {
+      cat("- **", names(coef)[i], " (", round(coef_val, 4), "):** Variabel ", var_name, " **tidak berpengaruh signifikan** terhadap ", tolower(dep_name), "\n", sep = "")
+    }
+  }
+}
+```
+Keputusan dan Interpretasi
+```{r}
+if(!is.null(params$model)) {
+  model_summary <- summary(params$model)
+  f_stat <- model_summary$fstatistic
+  p_value_model <- pf(f_stat[1], f_stat[2], f_stat[3], lower.tail = FALSE)
+  
+  cat("### Keputusan untuk Model Keseluruhan\n\n")
+  
+  if(p_value_model < params$alpha) {
+    cat("✅ **TOLAK H₀**\n")
+    cat("- **p-value =**", format(p_value_model, scientific = TRUE), "< α =", params$alpha, "\n")
+    cat("- **Kesimpulan:** Model regresi **signifikan secara statistik**. Minimal ada satu variabel independen yang berpengaruh signifikan terhadap", tolower(dep_name), ".\n\n")
+  } else {
+    cat("❌ **GAGAL TOLAK H₀**\n")
+    cat("- **p-value =**", format(p_value_model, scientific = TRUE), "> α =", params$alpha, "\n")
+    cat("- **Kesimpulan:** Model regresi **tidak signifikan secara statistik**. Tidak ada variabel independen yang berpengaruh signifikan terhadap", tolower(dep_name), ".\n\n")
+  }
+  
+  cat("### Interpretasi Praktis\n\n")
+  
+  r_squared_percent <- round(model_summary$r.squared * 100, 2)
+  cat("#### 1. Daya Prediksi Model\n")
+  cat("Model dapat menjelaskan **", r_squared_percent, "%** variasi dalam ", tolower(dep_name), "\n\n", sep = "")
+  
+  if(r_squared_percent >= 70) {
+    cat("**Daya prediksi SANGAT BAIK** (≥70%)\n\n")
+  } else if(r_squared_percent >= 50) {
+    cat("**Daya prediksi BAIK** (50-69%)\n\n")
+  } else if(r_squared_percent >= 30) {
+    cat("**Daya prediksi SEDANG** (30-49%)\n\n")
+  } else {
+    cat("**Daya prediksi RENDAH** (<30%)\n\n")
+  }
+  
+  cat("#### 2. Variabel Berpengaruh\n\n")
+  
+  coef_table <- model_summary$coefficients
+  significant_vars <- rownames(coef_table)[coef_table[, 4] < params$alpha][-1] # Remove intercept
+  
+  if(length(significant_vars) > 0) {
+    for(var in significant_vars) {
+      var_name <- switch(var,
+                         "POVERTY" = "Kemiskinan",
+                         "LOWEDU" = "Pendidikan Rendah",
+                         "ILLITERATE" = "Buta Huruf")
+      coef_val <- coef_table[var, 1]
+      direction <- if(coef_val > 0) "positif" else "negatif"
+      cat("- ", var_name, " berpengaruh **", direction, "** dan signifikan\n", sep = "")
+    }
+  } else {
+    cat("- Tidak ada variabel yang berpengaruh signifikan\n")
+  }
+  
+  cat("\n#### 3. Implikasi Kebijakan\n\n")
+  
+  if(length(significant_vars) > 0) {
+    cat("- Fokuskan intervensi pada variabel yang berpengaruh signifikan\n")
+    cat("- Pertimbangkan arah pengaruh dalam merancang program\n")
+    cat("- Monitor perubahan variabel prediktor untuk memprediksi dampak pada ", tolower(dep_name), "\n", sep = "")
+  } else {
+    cat("- Pertimbangkan variabel lain yang mungkin lebih berpengaruh\n")
+    cat("- Evaluasi kembali model atau metode analisis\n")
+  }
+}
+```
+Uji Asumsi Regresi
+```{r}
+if(params$include_assumptions && !is.null(params$model)) {
+  cat("### Pengujian Asumsi Regresi Linear\n\n")
+  
+
+  residuals_model <- residuals(params$model)
+  shapiro_result <- shapiro.test(residuals_model)
+  
+
+  bp_result <- bptest(params$model)
+  
+ 
+  dw_result <- dwtest(params$model)
+  
+  if(length(params$independent) > 1) {
+    vif_result <- vif(params$model)
+  }
+  
+  cat("#### Hasil Uji Asumsi\n\n")
+  
+  cat("**1. Normalitas Residual (Shapiro-Wilk)**\n")
+  cat("- W =", round(shapiro_result$statistic, 6), "\n")
+  cat("- p-value =", format(shapiro_result$p.value, scientific = TRUE), "\n")
+  cat("- Status:", if(shapiro_result$p.value > params$alpha) "✅ Terpenuhi" else "❌ Tidak Terpenuhi", "\n\n")
+  
+  cat("**2. Homoskedastisitas (Breusch-Pagan)**\n")
+  cat("- BP =", round(bp_result$statistic, 6), "\n")
+  cat("- p-value =", format(bp_result$p.value, scientific = TRUE), "\n")
+  cat("- Status:", if(bp_result$p.value > params$alpha) "✅ Terpenuhi" else "❌ Tidak Terpenuhi", "\n\n")
+  
+  cat("**3. Tidak Ada Autokorelasi (Durbin-Watson)**\n")
+  cat("- DW =", round(dw_result$statistic, 6), "\n")
+  cat("- p-value =", format(dw_result$p.value, scientific = TRUE), "\n")
+  cat("- Status:", if(dw_result$p.value > params$alpha) "✅ Terpenuhi" else "❌ Tidak Terpenuhi", "\n\n")
+  
+  if(length(params$independent) > 1) {
+    cat("**4. Tidak Ada Multikolinearitas (VIF)**\n")
+    for(i in 1:length(vif_result)) {
+      cat("- ", names(vif_result)[i], ": VIF =", round(vif_result[i], 4), 
+          if(vif_result[i] < 10) " ✅" else " ❌", "\n", sep = "")
+    }
+    cat("- Status:", if(all(vif_result < 10)) "✅ Terpenuhi" else "❌ Tidak Terpenuhi", "\n\n")
+  }
+  
+
+  normality_ok <- shapiro_result$p.value > params$alpha
+  homoscedasticity_ok <- bp_result$p.value > params$alpha
+  autocorrelation_ok <- dw_result$p.value > params$alpha
+  multicollinearity_ok <- if(length(params$independent) > 1) all(vif_result < 10) else TRUE
+  
+  all_assumptions_met <- normality_ok && homoscedasticity_ok && autocorrelation_ok && multicollinearity_ok
+  
+  cat("### Ringkasan Uji Asumsi\n\n")
+  
+  if(all_assumptions_met) {
+    cat("✅ **SEMUA ASUMSI TERPENUHI**\n")
+    cat("Model regresi valid untuk inferensi dan prediksi\n\n")
+  } else {
+    cat("❌ **BEBERAPA ASUMSI TIDAK TERPENUHI**\n")
+    cat("Interpretasi model perlu hati-hati\n\n")
+    cat("**Rekomendasi:**\n")
+    if(!normality_ok) cat("- Pertimbangkan transformasi variabel untuk menormalkan residual\n")
+    if(!homoscedasticity_ok) cat("- Gunakan robust standard errors atau transformasi variabel\n")
+    if(!autocorrelation_ok) cat("- Pertimbangkan model time series atau spatial regression\n")
+    if(!multicollinearity_ok) cat("- Hapus variabel dengan VIF tinggi atau gunakan ridge regression\n")
+  }
+}
+```
+Visualisasi
+```{r}
+if(!is.null(params$model)) {
+  if(length(params$independent) == 1) {
+
+    x_var <- params$independent[1]
+    y_var <- params$dependent
+    
+    p1 <- ggplot(params$data, aes(x = get(x_var), y = get(y_var))) +
+      geom_point(alpha = 0.6, color = "steelblue", size = 2) +
+      geom_smooth(method = "lm", se = TRUE, color = "red", size = 1.2) +
+      labs(
+        title = paste("Regresi Linear:", y_var, "vs", x_var),
+        subtitle = paste("R² =", round(summary(params$model)$r.squared, 4)),
+        x = paste(x_var, "(%)"),
+        y = paste(y_var, "(%)")
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 12),
+        panel.grid.major = element_line(color = "gray90"),
+        panel.grid.minor = element_blank()
+      )
+    
+    print(p1)
+    
+  } else {
+    fitted_vals <- fitted(params$model)
+    actual_vals <- params$data[[params$dependent]]
+    
+    plot_data <- data.frame(
+      Fitted = fitted_vals,
+      Actual = actual_vals
+    )
+    
+    p1 <- ggplot(plot_data, aes(x = Fitted, y = Actual)) +
+      geom_point(alpha = 0.6, color = "steelblue", size = 2) +
+      geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed", size = 1.2) +
+      labs(
+        title = "Fitted vs Actual Values",
+        subtitle = paste("R² =", round(summary(params$model)$r.squared, 4)),
+        x = "Fitted Values",
+        y = "Actual Values"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+        plot.subtitle = element_text(hjust = 0.5, size = 12),
+        panel.grid.major = element_line(color = "gray90"),
+        panel.grid.minor = element_blank()
+      )
+    
+    print(p1)
+  }
+}
+```
+Kesimpulan dan Rekomendasi
+```{r}
+cat("### Kesimpulan Utama\n\n")
+
+if(!is.null(params$model)) {
+  model_summary <- summary(params$model)
+  f_stat <- model_summary$fstatistic
+  p_value_model <- pf(f_stat[1], f_stat[2], f_stat[3], lower.tail = FALSE)
+  r_squared <- model_summary$r.squared
+  
+  cat("1. **Model Keseluruhan:**", if(p_value_model < params$alpha) "Signifikan" else "Tidak Signifikan", "\n")
+  cat("2. **Daya Prediksi:** Model menjelaskan", round(r_squared * 100, 2), "% variasi dalam", tolower(dep_name), "\n")
+  
+  coef_table <- model_summary$coefficients
+  significant_vars <- rownames(coef_table)[coef_table[, 4] < params$alpha][-1]
+  
+  if(length(significant_vars) > 0) {
+    cat("3. **Variabel Signifikan:**", length(significant_vars), "dari", length(params$independent), "variabel berpengaruh signifikan\n")
+  } else {
+    cat("3. **Variabel Signifikan:** Tidak ada variabel yang berpengaruh signifikan\n")
+  }
+  
+  if(params$include_assumptions) {
+    residuals_model <- residuals(params$model)
+    shapiro_result <- shapiro.test(residuals_model)
+    bp_result <- bptest(params$model)
+    dw_result <- dwtest(params$model)
+    
+    normality_ok <- shapiro_result$p.value > params$alpha
+    homoscedasticity_ok <- bp_result$p.value > params$alpha
+    autocorrelation_ok <- dw_result$p.value > params$alpha
+    
+    multicollinearity_ok <- TRUE
+    if(length(params$independent) > 1) {
+      vif_result <- vif(params$model)
+      multicollinearity_ok <- all(vif_result < 10)
+    }
+    
+    assumptions_met <- sum(c(normality_ok, homoscedasticity_ok, autocorrelation_ok, multicollinearity_ok))
+    total_assumptions <- if(length(params$independent) > 1) 4 else 3
+    
+    cat("4. **Asumsi Model:**", assumptions_met, "dari", total_assumptions, "asumsi terpenuhi\n")
+  }
+}
+
+```

@@ -1,0 +1,250 @@
+---
+title: "Laporan Uji Proporsi"
+output: 
+  html_document
+
+params:
+  test_type: "one_sample"
+  variable: "LOWEDU_CAT"
+  status: "Tinggi"
+  p0: 0.3
+  alternative_one: "two.sided"
+  province1: NULL
+  province2: NULL
+  alternative_two: NULL
+  data: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(knitr)
+
+# Get parameters
+test_type <- params$test_type
+variable <- params$variable
+status <- params$status
+p0 <- params$p0
+alternative_one <- params$alternative_one
+province1 <- params$province1
+province2 <- params$province2
+alternative_two <- params$alternative_two
+data <- params$data
+
+
+var_name_map <- list(
+  "LOWEDU_CAT" = "Pendidikan Rendah",
+  "POVERTY_CAT" = "Kemiskinan", 
+  "ILLITERATE_CAT" = "Buta Huruf"
+)
+var_name <- var_name_map[[variable]]
+```
+Jenis Uji: `r if(test_type == "one_sample") "Uji Proporsi Satu Sampel" else "Uji Proporsi Dua Sampel"`
+
+Variabel: `r variable` (`r var_name`)
+
+Status yang diuji: `r status`
+```{r}
+if(test_type == "one_sample") {
+  cat("**Nilai hipotesis (p₀):**", p0, "\n")
+  cat("**Alternatif:**", alternative_one, "\n")
+} else {
+  cat("**Provinsi 1:**", province1, "\n")
+  cat("**Provinsi 2:**", province2, "\n")
+  cat("**Alternatif:**", alternative_two, "\n")
+}
+```
+Hipotesis
+```{r}
+if(test_type == "one_sample") {
+  cat("**H₀:** p =", p0, "(Proporsi", tolower(var_name), "dengan status", status, "sama dengan", p0, ")\n\n")
+  
+  h1_text <- switch(alternative_one,
+    "two.sided" = paste("**H₁:** p ≠", p0),
+    "less" = paste("**H₁:** p <", p0),
+    "greater" = paste("**H₁:** p >", p0)
+  )
+  cat(h1_text, "\n")
+  
+} else {
+  cat("**H₀:** p₁ = p₂ (Proporsi", tolower(var_name), "dengan status", status, "di", province1, "sama dengan di", province2, ")\n\n")
+  
+  h1_text <- switch(alternative_two,
+    "two.sided" = "**H₁:** p₁ ≠ p₂",
+    "less" = "**H₁:** p₁ < p₂", 
+    "greater" = "**H₁:** p₁ > p₂"
+  )
+  cat(h1_text, "\n")
+}
+```
+Hasil Uji Statistik
+```{r}
+if(!variable %in% names(data)) {
+  cat("**ERROR:** Variabel", variable, "tidak ditemukan dalam data.\n")
+} else {
+  if(test_type == "one_sample") {
+    var_data <- data[[variable]]
+    success_count <- sum(var_data == status, na.rm = TRUE)
+    total_count <- sum(!is.na(var_data))
+    
+    if(total_count > 0) {
+      test_result <- prop.test(success_count, total_count, p = p0,
+                               alternative = alternative_one, correct = TRUE)
+      
+      sample_prop <- success_count / total_count
+      
+      cat("## Data Summary\n")
+      cat("- Jumlah observasi total (n):", total_count, "\n")
+      cat("- Jumlah dengan status '", status, "':", success_count, "\n")
+      cat("- Proporsi sampel (p̂):", round(sample_prop, 4), "\n")
+      cat("- Proporsi hipotesis (p₀):", p0, "\n\n")
+      
+      cat("## Hasil Uji Z\n")
+      cat("- Statistik Uji:", round(test_result$statistic, 4), "\n")
+      cat("- df:", test_result$parameter, "\n")
+      cat("- p-value:", format(test_result$p.value, scientific = TRUE), "\n")
+      
+      if(alternative_one == "two.sided") {
+        cat("- Confidence interval (95%):", round(test_result$conf.int[1], 4), "to", round(test_result$conf.int[2], 4), "\n")
+      }
+    }
+    
+  } else {
+    data1 <- data %>% filter(PROVINCENAME == province1) %>% pull(variable)
+    data2 <- data %>% filter(PROVINCENAME == province2) %>% pull(variable)
+    
+    if(length(data1) > 0 && length(data2) > 0) {
+      success1 <- sum(data1 == status, na.rm = TRUE)
+      total1 <- sum(!is.na(data1))
+      success2 <- sum(data2 == status, na.rm = TRUE)
+      total2 <- sum(!is.na(data2))
+      
+      if(total1 > 0 && total2 > 0) {
+        test_result <- prop.test(c(success1, success2), c(total1, total2),
+                                 alternative = alternative_two, correct = TRUE)
+        
+        prop1 <- success1 / total1
+        prop2 <- success2 / total2
+        
+        cat("## Data Summary\n")
+        cat("**", province1, ":**\n")
+        cat("- n:", total1, ", sukses:", success1, ", proporsi:", round(prop1, 4), "\n\n")
+        cat("**", province2, ":**\n") 
+        cat("- n:", total2, ", sukses:", success2, ", proporsi:", round(prop2, 4), "\n\n")
+        
+        cat("## Hasil Uji Z\n")
+        cat("- Statistik Uji:", round(test_result$statistic, 4), "\n")
+        cat("- df:", test_result$parameter, "\n")
+        cat("- p-value:", format(test_result$p.value, scientific = TRUE), "\n")
+        
+        if(alternative_two == "two.sided") {
+          cat("- Confidence interval (95%):", round(test_result$conf.int[1], 4), "to", round(test_result$conf.int[2], 4), "\n")
+        }
+      }
+    }
+  }
+}
+```
+Statistik Deskriptif
+```{r}
+if(variable %in% names(data)) {
+  if(test_type == "one_sample") {
+    var_data <- data[[variable]]
+    freq_table <- table(var_data, useNA = "ifany")
+    prop_table <- prop.table(freq_table)
+    
+    cat("## Tabel Frekuensi\n")
+    for(i in 1:length(freq_table)) {
+      cat("-", names(freq_table)[i], ":", freq_table[i], "(", round(prop_table[i] * 100, 2), "%)\n")
+    }
+    cat("\n**Total observasi:**", sum(freq_table), "\n")
+    
+  } else {
+    data1 <- data %>% filter(PROVINCENAME == province1) %>% pull(variable)
+    data2 <- data %>% filter(PROVINCENAME == province2) %>% pull(variable)
+    
+    cat("**", province1, ":**\n")
+    freq1 <- table(data1, useNA = "ifany")
+    prop1 <- prop.table(freq1)
+    for(i in 1:length(freq1)) {
+      cat("-", names(freq1)[i], ":", freq1[i], "(", round(prop1[i] * 100, 2), "%)\n")
+    }
+    cat("Total:", sum(freq1), "\n\n")
+    
+    cat("**", province2, ":**\n")
+    freq2 <- table(data2, useNA = "ifany")
+    prop2 <- prop.table(freq2)
+    for(i in 1:length(freq2)) {
+      cat("-", names(freq2)[i], ":", freq2[i], "(", round(prop2[i] * 100, 2), "%)\n")
+    }
+    cat("Total:", sum(freq2), "\n")
+  }
+}
+```
+
+Keputusan dan Interpretasi
+```{r}
+if(variable %in% names(data) && exists("test_result")) {
+  is_significant <- test_result$p.value < 0.05
+  
+  cat("## Keputusan Statistik\n")
+  if(is_significant) {
+    cat("**TOLAK H₀** - Ada bukti yang cukup untuk mendukung H₁\n\n")
+  } else {
+    cat("**GAGAL TOLAK H₀** - Tidak ada bukti yang cukup untuk mendukung H₁\n\n")
+  }
+  
+  cat("## Interpretasi\n")
+  if(test_type == "one_sample") {
+    sample_prop <- round(success_count / total_count, 3)
+    
+    if(is_significant) {
+      direction <- switch(alternative_one,
+        "two.sided" = "berbeda secara signifikan dari",
+        "less" = "secara signifikan kurang dari",
+        "greater" = "secara signifikan lebih dari"
+      )
+      cat("Proporsi", tolower(var_name), "dengan status", status, "(", sample_prop, ")", direction, p0, ".\n\n")
+    } else {
+      cat("Tidak ada bukti yang cukup bahwa proporsi", tolower(var_name), "dengan status", status, "(", sample_prop, ") berbeda dari", p0, ".\n\n")
+    }
+    
+  } else {
+    prop1 <- round(success1 / total1, 3)
+    prop2 <- round(success2 / total2, 3)
+    
+    if(is_significant) {
+      if(alternative_two == "two.sided") {
+        cat("Proporsi", tolower(var_name), "dengan status", status, "di", province1, "(", prop1, ") dan", province2, "(", prop2, ") berbeda secara signifikan.\n\n")
+      } else {
+        direction <- switch(alternative_two,
+          "less" = paste("di", province1, "secara signifikan lebih rendah daripada di", province2),
+          "greater" = paste("di", province1, "secara signifikan lebih tinggi daripada di", province2)
+        )
+        cat("Proporsi", tolower(var_name), "dengan status", status, direction, ".\n\n")
+      }
+    } else {
+      cat("Tidak ada perbedaan yang signifikan dalam proporsi", tolower(var_name), "dengan status", status, "antara", province1, "(", prop1, ") dan", province2, "(", prop2, ").\n\n")
+    }
+  }
+  
+  cat("## Interpretasi Praktis\n")
+  if(test_type == "one_sample") {
+    if(is_significant) {
+      cat("Hasil ini menunjukkan bahwa proporsi", tolower(var_name), "dengan status", status, "di Indonesia berbeda dari nilai yang diuji.\n")
+    } else {
+      cat("Hasil ini menunjukkan bahwa proporsi", tolower(var_name), "dengan status", status, "di Indonesia sesuai dengan nilai yang diuji.\n")
+    }
+  } else {
+    if(is_significant) {
+      cat("Hasil ini menunjukkan bahwa proporsi", tolower(var_name), "dengan status", status, "di kedua provinsi berbeda secara signifikan, sehingga memerlukan pendekatan kebijakan yang disesuaikan.\n")
+    } else {
+      cat("Hasil ini menunjukkan bahwa proporsi", tolower(var_name), "dengan status", status, "di kedua provinsi relatif serupa, sehingga dapat menggunakan pendekatan kebijakan yang sama.\n")
+    }
+  }
+  
+} else {
+  cat("Analisis tidak dapat diselesaikan karena variabel tidak ditemukan atau data tidak valid.\n")
+}
+```
+

@@ -1,0 +1,210 @@
+---
+title: "Laporan Uji Homogenitas Varians"
+output:
+  html_document
+params:
+  variable: "POVERTY"
+  provinces: NULL
+  data: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+library(car)
+
+variable <- params$variable
+provinces <- params$provinces
+data <- params$data
+
+
+var_name_map <- list(
+  "POVERTY" = "Kemiskinan",
+  "LOWEDU" = "Pendidikan Rendah",
+  "ILLITERATE" = "Buta Huruf"
+)
+var_name <- var_name_map[[variable]]
+```
+Variabel: `r variable` (`r var_name`)
+Provinsi yang Dibandingkan: `r paste(provinces, collapse = ", ")`
+Uji yang Digunakan: Levene Test
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  filtered_data <- data %>%
+    filter(PROVINCENAME %in% provinces)
+  
+  total_obs <- nrow(filtered_data)
+  num_groups <- length(provinces)
+  
+  cat("**Total observasi:**", total_obs, "\n")
+  cat("**Jumlah kelompok (provinsi):**", num_groups, "\n")
+  cat("**Rata-rata observasi per kelompok:**", round(total_obs/num_groups, 1), "\n")
+} else {
+  cat("Data tidak tersedia untuk analisis.\n")
+}
+```
+## Hipotesis
+
+H₀: σ₁² = σ₂² = σ₃² = ... (Varians antar provinsi homogen/sama)
+H₁: Minimal ada satu varians yang berbeda
+Tingkat signifikansi (α): 
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  filtered_data <- data %>%
+    filter(PROVINCENAME %in% provinces)
+  
+  if(nrow(filtered_data) >= 6) {
+    var_data <- filtered_data[[variable]]
+    provinces_factor <- as.factor(filtered_data$PROVINCENAME)
+    
+    tryCatch({
+      levene_result <- leveneTest(var_data, provinces_factor)
+      
+      cat("### Hasil Uji Levene\n\n")
+      cat("- **F-statistik:** ", round(levene_result$`F value`[1], 4), "\n")
+      cat("- **df1:** ", levene_result$Df[1], "\n")
+      cat("- **df2:** ", levene_result$Df[2], "\n")
+      cat("- **p-value:** ", format(levene_result$`Pr(>F)`[1], scientific = TRUE), "\n\n")
+      
+      cat("### Keputusan\n\n")
+      if(levene_result$`Pr(>F)`[1] > 0.05) {
+        cat("**GAGAL TOLAK H₀**\n\n")
+        cat("**Kesimpulan:** Varians antar provinsi homogen ✓")
+        is_homogen <- TRUE
+      } else {
+        cat("**TOLAK H₀**\n\n")
+        cat("**Kesimpulan:** Varians antar provinsi TIDAK homogen ✗")
+        is_homogen <- FALSE
+      }
+      
+    }, error = function(e) {
+      cat("Error dalam perhitungan uji Levene:", e$message, "\n")
+      is_homogen <- FALSE
+    })
+  } else {
+    cat("Data tidak mencukupi untuk uji Levene (minimal 6 observasi total).\n")
+    is_homogen <- FALSE
+  }
+} else {
+  cat("Analisis tidak dapat diselesaikan karena data tidak tersedia.\n")
+  is_homogen <- FALSE
+}
+```
+Visualisasi
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+  filtered_data <- data %>%
+    filter(PROVINCENAME %in% provinces)
+  
+  if(nrow(filtered_data) > 0) {
+    var_data <- filtered_data[[variable]]
+    provinces_data <- filtered_data$PROVINCENAME
+    
+    plot_data <- data.frame(
+      value = var_data,
+      province = as.factor(provinces_data)
+    )
+    
+    p1 <- ggplot(plot_data, aes(x = province, y = value, fill = province)) +
+      geom_boxplot(alpha = 0.7, outlier.color = "red") +
+      geom_jitter(width = 0.2, alpha = 0.5, size = 1) +
+      scale_fill_brewer(type = "qual", palette = "Set2") +
+      labs(
+        title = paste("Boxplot", variable, "berdasarkan Provinsi"),
+        x = "Provinsi",
+        y = paste(variable, "(%)")
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    variance_data <- filtered_data %>%
+      group_by(PROVINCENAME) %>%
+      summarise(
+        Variance = var(.data[[variable]], na.rm = TRUE),
+        Count = n(),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(Variance))
+    
+    p2 <- ggplot(variance_data, aes(x = reorder(PROVINCENAME, Variance), y = Variance, fill = PROVINCENAME)) +
+      geom_col(alpha = 0.8) +
+      geom_text(aes(label = paste0(round(Variance, 2), "\n(n=", Count, ")")),
+                 hjust = -0.1, fontface = "bold", size = 3) +
+      scale_fill_brewer(type = "qual", palette = "Set1") +
+      coord_flip() +
+      labs(
+        title = "Perbandingan Varians antar Provinsi",
+        x = "Provinsi",
+        y = "Varians"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "none"
+      )
+    
+    grid.arrange(p1, p2, ncol = 2)
+  }
+}
+```
+Interpretasi dan Rekomendasi
+```{r}
+if(!is.null(data) && variable %in% names(data)) {
+
+  filtered_data <- data %>%
+    filter(PROVINCENAME %in% provinces)
+  
+  if(nrow(filtered_data) >= 6) {
+    var_data <- filtered_data[[variable]]
+    provinces_factor <- as.factor(filtered_data$PROVINCENAME)
+    
+    tryCatch({
+      levene_result <- leveneTest(var_data, provinces_factor)
+      is_homogen <- levene_result$`Pr(>F)`[1] > 0.05
+      
+      var_name_lower <- switch(variable,
+                              "POVERTY" = "kemiskinan",
+                              "LOWEDU" = "pendidikan rendah",
+                              "ILLITERATE" = "buta huruf")
+      
+      cat("### Interpretasi Statistik\n\n")
+      
+      if(is_homogen) {
+        cat("Dari uji Levene didapatkan bahwa varians", var_name_lower, "antar provinsi yang dipilih **HOMOGEN** dengan p-value =", 
+            format(levene_result$`Pr(>F)`[1], scientific = TRUE), "> α = 0.05.\n\n")
+        
+        cat("### Rekomendasi\n\n")
+        cat("✅ **Asumsi homogenitas varians terpenuhi** untuk analisis parametrik\n\n")
+        cat("✅ Dapat menggunakan uji statistik yang mengasumsikan varians homogen:\n")
+       
+        
+      } else {
+        cat("Dari uji Levene didapatkan bahwa varians", var_name_lower, "antar provinsi yang dipilih **TIDAK HOMOGEN** dengan p-value =", 
+            format(levene_result$`Pr(>F)`[1], scientific = TRUE), "< α = 0.05.\n\n")
+        
+        cat("### Rekomendasi\n\n")
+        cat("❌ **Asumsi homogenitas varians tidak terpenuhi** untuk analisis parametrik standar\n\n")
+        cat("🔄 **Alternatif yang dapat dilakukan:**\n")
+
+      }
+      
+      
+    }, error = function(e) {
+      cat("Interpretasi tidak dapat diberikan karena terjadi error dalam perhitungan:", e$message, "\n")
+    })
+  } else {
+    cat("### Interpretasi\n\n")
+    cat("Interpretasi tidak dapat diberikan karena data tidak mencukupi untuk uji Levene.\n\n")
+  }
+} else {
+  cat("Interpretasi tidak dapat diberikan karena data tidak tersedia.\n")
+}
+```
+
